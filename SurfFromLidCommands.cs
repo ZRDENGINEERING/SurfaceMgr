@@ -45,6 +45,7 @@ public class SurfFromLidCommands
                     resolution = pdr.Value;
                 }
 
+
                 var extractor = new LazGroundExtractor();
                 var sourceEpsg = extractor.ResolveSourceEpsg(
                     new[] { pfr.StringResult }, "6344", s => ed.WriteMessage(s));
