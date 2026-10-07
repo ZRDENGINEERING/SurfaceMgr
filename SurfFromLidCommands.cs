@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
@@ -46,6 +46,8 @@ public class SurfFromLidCommands
                 }
 
                 var extractor = new LazGroundExtractor();
+                var sourceEpsg = extractor.ResolveSourceEpsg(
+                    new[] { pfr.StringResult }, "6344", s => ed.WriteMessage(s));
                 var targetEpsg = CivilCoordSystem.GetActiveEpsg().ToString();
                 var outDir = Path.Combine(Path.GetDirectoryName(doc.Name)!, "SurfaceMgr_Output");
 
@@ -55,7 +57,7 @@ public class SurfFromLidCommands
                 if (pkr.StringResult == "Points")
                 {
                     var enzPath = extractor.ExtractGroundPoints(
-                        pfr.StringResult, boundary, targetEpsg, outDir, sourceEpsg: "6344");
+                        pfr.StringResult, boundary, targetEpsg, outDir, sourceEpsg: sourceEpsg);
 
                     var surface = SurfaceFactory.CreateNamedSurface(tr, "Surface_FromLAZ_Points", styleId);
 
@@ -69,7 +71,7 @@ public class SurfFromLidCommands
                 else
                 {
                     var tifPath = extractor.DemFromGroundPoints(
-                        pfr.StringResult, boundary, targetEpsg, outDir, resolution, sourceEpsg: "6344");
+                        pfr.StringResult, boundary, targetEpsg, outDir, resolution, sourceEpsg: sourceEpsg);
 
                     var surface = SurfaceFactory.CreateNamedSurface(tr, "Surface_FromLAZ_Raster", styleId);
                     surface.DEMFilesDefinition.AddDEMFile(tifPath);

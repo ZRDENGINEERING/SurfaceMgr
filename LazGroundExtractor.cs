@@ -1,5 +1,6 @@
-﻿using System.IO;
+using System.IO;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 public class LazGroundExtractor
 {
@@ -174,26 +175,96 @@ public class LazGroundExtractor
         RunPdal(pipelinePath);
     }
 
+    private const string PdalExe = @"C:\OSGeo4W\bin\pdal.exe";
+    private const string ProjData = @"C:\OSGeo4W\share\proj";
+    private const string GdalData = @"C:\OSGeo4W\share\gdal";
+
+    /// <summary>
+    /// Reads the horizontal EPSG code from a LAZ/LAS header (null if the file has no
+    /// usable spatial reference). Reads the header only, so it is fast even on huge tiles.
+    /// </summary>
+    public string? DetectSourceEpsg(string lazPath)
+    {
+        var (exit, stdout, _) = RunPdalCapture($"info --metadata \"{lazPath}\"");
+        if (exit != 0) return null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(stdout);
+            if (!doc.RootElement.TryGetProperty("metadata", out var meta) ||
+                !meta.TryGetProperty("srs", out var srs) ||
+                !srs.TryGetProperty("horizontal", out var horiz))
+                return null;
+
+            var wkt = horiz.GetString();
+            if (string.IsNullOrEmpty(wkt)) return null;
+
+            // The projected CRS's own AUTHORITY is the last EPSG tag in the horizontal WKT.
+            var matches = Regex.Matches(wkt, "AUTHORITY\\[\"EPSG\",\"(\\d+)\"\\]");
+            return matches.Count > 0 ? matches[^1].Groups[1].Value : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Works out the source EPSG for a set of point-cloud files. Uses the CRS stored in the
+    /// files; falls back to <paramref name="fallbackEpsg"/> (with a log message) when none is
+    /// stored; throws if the files disagree, since they can't share one reprojection stage.
+    /// </summary>
+    public string ResolveSourceEpsg(IEnumerable<string> lazPaths, string fallbackEpsg, Action<string>? log = null)
+    {
+        var found = lazPaths
+            .Select(DetectSourceEpsg)
+            .Where(e => e != null)
+            .Select(e => e!)
+            .Distinct()
+            .ToList();
+
+        if (found.Count == 0)
+        {
+            log?.Invoke($"\nNo spatial reference stored in the point cloud — assuming EPSG:{fallbackEpsg}.");
+            return fallbackEpsg;
+        }
+        if (found.Count > 1)
+            throw new InvalidOperationException(
+                "Point cloud files use different coordinate systems (" +
+                string.Join(", ", found.Select(e => "EPSG:" + e)) + "). Process them separately.");
+
+        log?.Invoke($"\nSource CRS from file: EPSG:{found[0]}");
+        return found[0];
+    }
+
     private void RunPdal(string pipelinePath)
     {
-        const string pdalExe = @"C:\OSGeo4W\bin\pdal.exe";
-        const string projData = @"C:\OSGeo4W\share\proj";
-        const string gdalData = @"C:\OSGeo4W\share\gdal";
+        var (exit, _, stderr) = RunPdalCapture($"pipeline \"{pipelinePath}\"",
+            Path.GetDirectoryName(pipelinePath));
+        if (exit != 0)
+            throw new InvalidOperationException($"PDAL failed: {stderr}");
+    }
 
-        var psi = new System.Diagnostics.ProcessStartInfo(pdalExe, $"pipeline \"{pipelinePath}\"")
+    // Reads stdout and stderr concurrently so large output can't fill a pipe and hang PDAL.
+    private static (int exitCode, string stdout, string stderr) RunPdalCapture(
+        string arguments, string? workingDir = null)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo(PdalExe, arguments)
         {
             RedirectStandardError = true,
             RedirectStandardOutput = true,
             UseShellExecute = false,
-            WorkingDirectory = Path.GetDirectoryName(pipelinePath) ?? Path.GetTempPath()
+            CreateNoWindow = true,
+            WorkingDirectory = workingDir ?? Path.GetTempPath()
         };
-        psi.EnvironmentVariables["PROJ_LIB"] = projData;
-        psi.EnvironmentVariables["PROJ_DATA"] = projData;
-        psi.EnvironmentVariables["GDAL_DATA"] = gdalData;
+        psi.EnvironmentVariables["PROJ_LIB"] = ProjData;
+        psi.EnvironmentVariables["PROJ_DATA"] = ProjData;
+        psi.EnvironmentVariables["GDAL_DATA"] = GdalData;
 
         using var proc = System.Diagnostics.Process.Start(psi)!;
+        var errTask = proc.StandardError.ReadToEndAsync();
+        var stdout = proc.StandardOutput.ReadToEnd();
         proc.WaitForExit();
-        if (proc.ExitCode != 0)
-            throw new InvalidOperationException($"PDAL failed: {proc.StandardError.ReadToEnd()}");
+        return (proc.ExitCode, stdout, errTask.Result);
     }
 }

@@ -1,4 +1,4 @@
-﻿using System.Net.Http;
+using System.Net.Http;
 using System.IO;
 using System.IO.Compression;
 using Autodesk.AutoCAD.ApplicationServices;
@@ -120,17 +120,18 @@ public class GetTXLidCommands
             if (lazPaths.Count == 0) { ed.WriteMessage("\nNo .laz files extracted."); return; }
             ed.WriteMessage($"\nProcessing {lazPaths.Count} LAZ file(s) (ground points only)...");
 
-            // NOTE: TxGIO LAZ source CRS is assumed to be EPSG:6344 (NAD83(2011) UTM 15N).
-            // Collections elsewhere in Texas (UTM 14N etc.) need the per-collection CRS.
+            // Source CRS comes from the LAZ headers; 6344 (NAD83(2011) UTM 15N) is only
+            // the fallback when a file stores none.
             var extractor = new LazGroundExtractor();
+            var sourceEpsg = extractor.ResolveSourceEpsg(lazPaths, "6344", s => ed.WriteMessage(s));
             string? enzPath = null;
             string? tifPath = null;
             if (pkr.StringResult == "Points")
                 enzPath = extractor.ExtractGroundPointsMulti(
-                    lazPaths, boundary, targetEpsg.ToString(), outDir, sourceEpsg: "6344");
+                    lazPaths, boundary, targetEpsg.ToString(), outDir, sourceEpsg: sourceEpsg);
             else
                 tifPath = extractor.DemFromGroundPointsMulti(
-                    lazPaths, boundary, targetEpsg.ToString(), outDir, resolution, sourceEpsg: "6344");
+                    lazPaths, boundary, targetEpsg.ToString(), outDir, resolution, sourceEpsg: sourceEpsg);
 
             using (doc.LockDocument())
             using (var tr = db.TransactionManager.StartTransaction())
