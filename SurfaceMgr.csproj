@@ -1,0 +1,72 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFramework>net8.0-windows</TargetFramework>
+		<RootNamespace>LayerSetup</RootNamespace>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<Platforms>x64</Platforms>
+		<GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+		<UseWindowsForms>true</UseWindowsForms>
+		<UseWPF>true</UseWPF>
+		<ImportWindowsDesktopTargets>true</ImportWindowsDesktopTargets>
+		<OutputType>Library</OutputType>
+		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<BuildStamp>$([System.DateTime]::Now.ToString(yyyyMMdd_HHmmss))</BuildStamp>
+		<AssemblyName>SurfaceMgr_$(BuildStamp)</AssemblyName>
+	</PropertyGroup>
+
+	
+	
+	<Target Name="PostBuild" AfterTargets="PostBuildEvent">
+		<PropertyGroup>
+			<StampDir>$(MSBuildProjectDirectory)\SurfaceMgr.bundle\Contents\Build_$(BuildStamp)\</StampDir>
+		</PropertyGroup>
+
+		<MakeDir Directories="$(StampDir)" />
+
+		<ItemGroup>
+			<OutputFiles Include="$(TargetDir)**\*.*" />
+		</ItemGroup>
+		<Copy SourceFiles="@(OutputFiles)" DestinationFolder="$(StampDir)" />
+
+		<!-- Clean up every OTHER timestamped build folder. Locked ones are
+       skipped without failing the build. -->
+		<ItemGroup>
+			<OldBuildDirs Include="$(MSBuildProjectDirectory)\SurfaceMgr.bundle\Contents\Build_*"
+						  Exclude="$(StampDir.TrimEnd('\'))" />
+		</ItemGroup>
+		<RemoveDir Directories="@(OldBuildDirs)" ContinueOnError="WarnAndContinue" />
+	</Target>
+	
+	
+	
+
+	<ItemGroup>
+		<PackageReference Include="AutoCAD.NET" Version="25.1.0" />
+		<PackageReference Include="ProjNET" Version="2.1.0" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Folder Include="Properties\" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Reference Include="AeccDbMgd">
+			<HintPath>C:\Program Files\Autodesk\AutoCAD 2026\C3D\AeccDbMgd.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
+	
+
+	<Reference Include="AecBaseMgd">
+		<HintPath>C:\Program Files\Autodesk\AutoCAD 2026\ACA\AecBaseMgd.dll</HintPath>
+		<Private>False</Private>
+	</Reference>
+		
+
+	</ItemGroup>
+	
+</Project>
+
